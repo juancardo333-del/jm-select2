@@ -45,7 +45,7 @@ th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--bd);white-sp
 <nav id="nav"></nav>
 <main id="app"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="config.js"></script>
+<script>window.CFG={url:'https://smvvxianelofqwdrport.supabase.co',key:'sb_publishable_7Q6DQLwV57D7zy_qj-hOng_TzS_-QzB'};</script>
 <script>
 const M=n=>new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',maximumFractionDigits:0}).format(n||0);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -107,14 +107,14 @@ function vC(){return `<div class="card"><h2>Nuevo cliente</h2><div class="grid">
 <div><label>Nombre</label><input id="cn"></div><div><label>Teléfono</label><input id="ct"></div>
 <div><label>Correo</label><input id="ce"></div><div><label>Ciudad</label><input id="cc"></div>
 <button class="btn" onclick="addC()">Agregar</button></div></div>
-<div class="card"><h2>${ALL?'Clientes del equipo':'Mis clientes'} (${C.length})</h2><div class="tw">${C.length?`<table><tr><th>Nombre</th><th>Teléfono</th><th>Correo</th><th>Ciudad</th>${ALL?'<th>Responsable</th>':''}<th>Pedidos</th><th>Debe</th></tr>`+C.map(c=>{const ps=P.filter(p=>p.c===c.id),d=sum(ps,sal);return `<tr><td>${esc(c.nombre)}</td><td>${esc(c.tel)}</td><td>${esc(c.mail)}</td><td>${esc(c.ciudad)}</td>${ALL?`<td>${esc(c.uname)}</td>`:''}<td>${ps.length}</td><td class="${d>0?'neg':'pos'}">${M(d)}</td></tr>`}).join('')+'</table>':'<div class="empty">Aún no tienes clientes registrados.</div>'}</div></div>`}
+<div class="card"><h2>${ALL?'Clientes del equipo':'Mis clientes'} (${C.length})</h2><div class="tw">${C.length?`<table><tr><th>Nombre</th><th>Teléfono</th><th>Correo</th><th>Ciudad</th>${ALL?'<th>Responsable</th>':''}<th>Pedidos</th><th>Debe</th><th></th></tr>`+C.map(c=>{const ps=P.filter(p=>p.c===c.id),d=sum(ps,sal);return `<tr><td>${esc(c.nombre)}</td><td>${esc(c.tel)}</td><td>${esc(c.mail)}</td><td>${esc(c.ciudad)}</td>${ALL?`<td>${esc(c.uname)}</td>`:''}<td>${ps.length}</td><td class="${d>0?'neg':'pos'}">${M(d)}</td><td style="white-space:nowrap"><button class="x" style="color:var(--tx)" title="Editar" onclick="editC('${c.id}')">✎</button>${ADM?`<button class="x" title="Eliminar" onclick="del('clientes','${c.id}')">✕</button>`:''}</td></tr>`}).join('')+'</table>':'<div class="empty">Aún no tienes clientes registrados.</div>'}</div></div>`}
 function addC(){const n=val('cn');if(!n)return;act(()=>ok(sb.from('clientes').insert({nombre:n,telefono:val('ct'),correo:val('ce'),ciudad:val('cc')})))}
 /* Referencias */
 function vR(){return `<div class="card"><h2>Nueva referencia</h2><div class="grid">
 <div><label>Código</label><input id="rc"></div><div><label>Nombre</label><input id="rn"></div>
 <div><label>Precio de venta</label><input id="rp" type="number" min="0"></div><div><label>Costo</label><input id="rk" type="number" min="0"></div>
 <button class="btn" onclick="addR()">Agregar</button></div></div>
-<div class="card"><h2>Referencias de la empresa (${R.length})</h2><div class="tw">${R.length?`<table><tr><th>Código</th><th>Nombre</th><th>Precio</th><th>Costo</th><th>Utilidad</th><th>Margen</th></tr>`+R.map(r=>{const u=r.precio-r.costo;return `<tr><td>${esc(r.cod)}</td><td>${esc(r.nombre)}</td><td>${M(r.precio)}</td><td>${M(r.costo)}</td><td class="${u>=0?'pos':'neg'}">${M(u)}</td><td>${r.precio?Math.round(u/r.precio*100):0}%</td></tr>`}).join('')+'</table>':'<div class="empty">Aún no hay referencias.</div>'}</div></div>`}
+<div class="card"><h2>Referencias de la empresa (${R.length})</h2><div class="tw">${R.length?`<table><tr><th>Código</th><th>Nombre</th><th>Precio</th><th>Costo</th><th>Utilidad</th><th>Margen</th>${ADM?'<th></th>':''}</tr>`+R.map(r=>{const u=r.precio-r.costo;return `<tr><td>${esc(r.cod)}</td><td>${esc(r.nombre)}</td><td>${M(r.precio)}</td><td>${M(r.costo)}</td><td class="${u>=0?'pos':'neg'}">${M(u)}</td><td>${r.precio?Math.round(u/r.precio*100):0}%</td>${ADM?`<td style="white-space:nowrap"><button class="x" style="color:var(--tx)" title="Editar" onclick="editR('${r.id}')">✎</button><button class="x" title="Eliminar" onclick="del('referencias','${r.id}')">✕</button></td>`:''}</tr>`}).join('')+'</table>':'<div class="empty">Aún no hay referencias.</div>'}</div></div>`}
 function addR(){const n=val('rn');if(!n)return;act(()=>ok(sb.from('referencias').insert({codigo:val('rc'),nombre:n,precio:+val('rp')||0,costo:+val('rk')||0})))}
 /* Pedidos */
 function vP(){
@@ -154,7 +154,25 @@ function vG(){
 <button class="btn" onclick="addPago()">Registrar abono</button></div>`:'<div class="empty">No hay pedidos con saldo pendiente.</div>'}</div>
 <div class="card"><h2>Deuda por cliente</h2><div class="tw">${ac.length?`<table style="min-width:520px"><tr><th>Cliente</th><th>Total pedidos</th><th>Abonado</th><th>Debe</th></tr>`+ac.map(c=>{const ps=P.filter(p=>p.c===c.id),d=sum(ps,sal);return `<tr><td>${esc(c.nombre)}</td><td>${M(sum(ps,tot))}</td><td>${M(sum(ps,pag))}</td><td class="${d>0?'neg':'pos'}"><b>${M(d)}</b></td></tr>`}).join('')+'</table>':'<div class="empty">Aún no hay pedidos.</div>'}</div></div>`}
 function addPago(){const p=P.find(x=>x.id===val('ps')),m=+val('pm');if(!p||!(m>0))return;if(m>sal(p)){alert('El abono supera el saldo del pedido ('+M(sal(p))+').');return}act(()=>ok(sb.rpc('registrar_abono',{p_pedido:+p.id,p_fecha:val('pg')||today(),p_monto:m,p_nota:val('pn')})))}
-function del(c,id){if(confirm('¿Eliminar este registro?'))act(()=>ok(sb.from(c).delete().eq('id',id)))}
+function del(c,id){
+ const m=c==='referencias'?'¿Eliminar esta referencia? Si ya se usó en pedidos, esas líneas quedarán sin nombre.':'¿Eliminar este registro?';
+ if(confirm(m))act(async()=>{const r=await ok(sb.from(c).delete().eq('id',id).select());if(!r.length)throw new Error('No se pudo eliminar. Revisa que tengas permiso.')})}
+function edit(title,fields,save){
+ const old=$('ov');if(old)old.remove();const o=document.createElement('div');o.id='ov';
+ o.innerHTML=`<div class="sheet" style="max-width:460px"><h2>${title}</h2><div style="display:grid;gap:10px">${fields.map(f=>`<div><label>${f.l}</label><input id="e_${f.k}" type="${f.t||'text'}" value="${esc(f.v)}"></div>`).join('')}</div><div id="eer" style="color:#b3261e;min-height:20px;margin-top:8px;font-size:13px"></div><div class="bar" style="margin-top:6px"><button class="btn" id="esv">Guardar</button><button class="btn" style="background:none;color:#111;border:1px solid #ccc" onclick="$('ov').remove()">Cancelar</button></div></div>`;
+ document.body.appendChild(o);
+ $('esv').onclick=async()=>{const v={};fields.forEach(f=>v[f.k]=f.t==='number'?(+$('e_'+f.k).value||0):$('e_'+f.k).value.trim());
+  try{await save(v);o.remove();await loadAll()}catch(e){$('eer').textContent=e.message}}}
+function editC(id){const c=C.find(x=>x.id===id);if(!c)return;
+ edit('Editar cliente',[{k:'nombre',l:'Nombre',v:c.nombre},{k:'tel',l:'Teléfono',v:c.tel},{k:'mail',l:'Correo',v:c.mail},{k:'ciudad',l:'Ciudad',v:c.ciudad}],async v=>{
+  if(!v.nombre)throw new Error('Falta el nombre.');
+  const r=await ok(sb.from('clientes').update({nombre:v.nombre,telefono:v.tel,correo:v.mail,ciudad:v.ciudad}).eq('id',id).select());
+  if(!r.length)throw new Error('No se pudo guardar. Revisa que tengas permiso.')})}
+function editR(id){const r0=R.find(x=>x.id===id);if(!r0)return;
+ edit('Editar referencia',[{k:'cod',l:'Código',v:r0.cod},{k:'nombre',l:'Nombre',v:r0.nombre},{k:'precio',l:'Precio de venta',v:r0.precio,t:'number'},{k:'costo',l:'Costo',v:r0.costo,t:'number'}],async v=>{
+  if(!v.nombre)throw new Error('Falta el nombre.');
+  const r=await ok(sb.from('referencias').update({codigo:v.cod,nombre:v.nombre,precio:v.precio,costo:v.costo}).eq('id',id).select());
+  if(!r.length)throw new Error('No se pudo guardar. Revisa que tengas permiso.')})}
 /* Factura */
 function inv(id){const p=P.find(x=>x.id===id);if(!p)return;const c=C.find(x=>x.id===p.c)||{};
 const old=$('ov');if(old)old.remove();const o=document.createElement('div');o.id='ov';
