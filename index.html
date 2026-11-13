@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>JM Select · Gestión</title>
+<link rel="icon" href="logo.jpg">
+<style>
+:root{--bg:#f6f5f2;--card:#fff;--tx:#1d1d1b;--mu:#6b6a65;--bd:#e2e0da;--ac:#1f4e46;--acx:#fff;--ok:#1b7f4b;--bad:#b3261e}
+@media (prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#151514;--card:#1f1f1d;--tx:#efeee9;--mu:#9a9890;--bd:#33322e;--ac:#5fb3a2;--acx:#0d1f1b;--ok:#5fd08f;--bad:#f08a82}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+#hd{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 16px 4px;max-width:1000px;margin:auto}
+#hd img{width:52px;height:52px;border-radius:8px}#hd .t{flex:1;min-width:140px}#hd b{font-size:18px}#hd small{display:block;color:var(--mu)}
+nav{display:flex;gap:6px;overflow-x:auto;padding:8px 16px;max-width:1000px;margin:auto}
+nav button{flex:none;border:1px solid var(--bd);background:var(--card);color:var(--tx);padding:8px 14px;border-radius:999px;font:inherit;cursor:pointer}
+nav button.on{background:var(--ac);color:var(--acx);border-color:var(--ac)}
+main{max-width:1000px;margin:auto;padding:8px 16px 40px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:14px}
+h2{margin:0 0 10px;font-size:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;align-items:end}
+label{display:block;font-size:12px;color:var(--mu);margin-bottom:3px}
+input,select{width:100%;padding:8px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);font:inherit}
+input[type=checkbox]{width:auto}
+.btn{background:var(--ac);color:var(--acx);border:0;padding:9px 14px;border-radius:8px;font:inherit;cursor:pointer}
+.btn.l{background:none;color:var(--tx);border:1px solid var(--bd)}
+.x{background:none;border:0;color:var(--bad);cursor:pointer;font-size:16px}
+.tw{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:680px}
+th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--bd);white-space:nowrap}th{font-size:12px;color:var(--mu);font-weight:600}
+.kp{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:14px}
+.kp div{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px}.kp small{color:var(--mu)}.kp b{display:block;font-size:19px}
+.pos{color:var(--ok)}.neg{color:var(--bad)}
+.empty{color:var(--mu);padding:8px 0}
+.gate{max-width:400px;margin:24px auto}.gate img{width:140px;border-radius:12px;display:block;margin:0 auto 14px}
+.gate .f{display:grid;gap:10px}.gate .sw{display:flex;gap:6px;margin-bottom:12px}.gate .sw button{flex:1}
+#er{color:var(--bad);min-height:20px;font-size:13px}
+#ov{position:fixed;inset:0;background:rgba(0,0,0,.55);overflow:auto;padding:16px 12px;z-index:20}
+.sheet{background:#fff;color:#111;max-width:720px;margin:auto;padding:20px;border-radius:12px}.sheet th,.sheet td{border-color:#ddd}.sheet small{color:#555}
+.ih{display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:2px solid #1f4e46;padding-bottom:8px;margin-bottom:10px}.ih img{width:64px;border-radius:6px}.bar{display:flex;gap:8px;margin-bottom:12px}
+@media print{body>:not(#ov){display:none!important}#ov{position:static;background:none;padding:0}.noprint{display:none!important}.sheet{padding:0}}
+</style>
+</head>
+<body>
+<div id="hd"></div>
+<nav id="nav"></nav>
+<main id="app"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script>
+const M=n=>new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',maximumFractionDigits:0}).format(n||0);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const $=i=>document.getElementById(i),val=i=>$(i).value.trim(),today=()=>new Date().toISOString().slice(0,10);
+const sum=(a,f)=>a.reduce((s,x)=>s+f(x),0);
+let ME=null,ADM=false,NAME='',ALL=false,ST='load',MODE='login',tab='pedidos',D=[],DF=today(),DC='';
+let C=[],R=[],P=[];
+const tot=p=>sum(p.items,l=>l.precio*l.cant),cost=p=>sum(p.items,l=>l.costo*l.cant),ut=p=>tot(p)-cost(p),pag=p=>sum(p.pagos,x=>x.m),sal=p=>tot(p)-pag(p);
+const cn=i=>(C.find(x=>x.id===i)||{}).nombre||'—',rf=i=>R.find(x=>x.id===i)||{};
+const rl=l=>{const r=rf(l.r);return esc((r.cod?r.cod+' ':'')+(r.nombre||'—'))};
+const TABS={clientes:'Clientes',referencias:'Referencias',pedidos:'Pedidos',pagos:'Pagos'};
+if(!window.CFG||/TU-PROYECTO/.test(CFG.url)){document.body.innerHTML='<p style="padding:20px">Falta configurar <b>config.js</b> con tu URL y clave de Supabase (ver LEEME.md).</p>';throw new Error('config')}
+const sb=supabase.createClient(CFG.url,CFG.key);
+const MSG={'Invalid login credentials':'Correo o contraseña incorrectos.','User already registered':'Ese correo ya está registrado.','Email not confirmed':'Debes confirmar tu correo antes de entrar.'};
+const tr=e=>e.code==='23503'?'No se puede eliminar: tiene pedidos asociados.':(MSG[e.message]||(/least|weak/i.test(e.message)?'La contraseña es muy débil (mínimo 8 caracteres).':e.message));
+async function ok(p){const {data,error}=await p;if(error)throw new Error(tr(error));return data}
+async function loadAll(){
+ let cq=sb.from('clientes').select('*,perfiles(nombre)').order('nombre'),pq=sb.from('pedidos').select('*,perfiles(nombre),pedido_items(*),pagos(*)').order('id');
+ if(!ALL){cq=cq.eq('usuario_id',ME);pq=pq.eq('usuario_id',ME)}
+ const [c,r,p]=await Promise.all([ok(cq),ok(sb.from('referencias').select('*').order('nombre')),ok(pq)]);
+ C=c.map(x=>({id:String(x.id),nombre:x.nombre,tel:x.telefono,mail:x.correo,ciudad:x.ciudad,u:x.usuario_id,uname:x.perfiles?.nombre||'—'}));
+ R=r.map(x=>({id:String(x.id),cod:x.codigo,nombre:x.nombre,precio:+x.precio,costo:+x.costo}));
+ P=p.map(x=>({id:String(x.id),num:x.numero,fecha:x.fecha,c:String(x.cliente_id),u:x.usuario_id,uname:x.perfiles?.nombre||'—',items:x.pedido_items.map(i=>({r:String(i.referencia_id),cant:i.cantidad,precio:+i.precio,costo:+i.costo})),pagos:x.pagos.slice().sort((a,b)=>a.fecha.localeCompare(b.fecha)).map(g=>({f:g.fecha,m:+g.monto,n:g.nota||''}))}));
+ draw()}
+async function act(f){try{await f();await loadAll()}catch(e){alert(e.message)}}
+function go(t){tab=t;draw()}
+function draw(){
+ const ok=ST==='ok';
+ $('hd').innerHTML=`<img src="logo.jpg" alt="JM Select"><div class="t"><b>JM Select</b>${ok?`<small>${esc(NAME)}${ADM?' · administrador':''}</small>`:''}</div>${ok&&ADM?`<label style="margin:0"><input type="checkbox" ${ALL?'checked':''} onchange="ALL=this.checked;loadAll()"> Ver todo el equipo</label>`:''}${ok?'<button class="btn l" onclick="logout()">Salir</button>':''}`;
+ if(!ok){$('nav').innerHTML='';$('app').innerHTML=gate();return}
+ $('nav').innerHTML=Object.entries(TABS).map(([k,n])=>`<button class="${k===tab?'on':''}" onclick="go('${k}')">${n}</button>`).join('');
+ $('app').innerHTML=({clientes:vC,referencias:vR,pedidos:vP,pagos:vG})[tab]();
+ if($('pc'))deuda();
+}
+/* Registro e inicio de sesión */
+function gate(){
+ if(ST==='load')return '<div class="card gate">Cargando…</div>';
+ const reg=MODE==='reg',k='onkeydown="if(event.key===\'Enter\')doAuth()"';
+ return `<div class="card gate"><img src="logo.jpg" alt="">
+<div class="sw"><button class="btn ${reg?'l':''}" onclick="MODE='login';draw()">Iniciar sesión</button><button class="btn ${reg?'':'l'}" onclick="MODE='reg';draw()">Crear cuenta</button></div>
+<div class="f">${reg?`<div><label>Nombre</label><input id="an" ${k}></div>`:''}
+<div><label>Correo</label><input id="ae" type="email" autocomplete="email" ${k}></div>
+<div><label>Contraseña${reg?' (mínimo 8 caracteres)':''}</label><input id="ap" type="password" autocomplete="${reg?'new-password':'current-password'}" ${k}></div>
+${reg?`<div><label>Repite la contraseña</label><input id="ap2" type="password" autocomplete="new-password" ${k}></div>`:''}
+<div id="er"></div><button class="btn" onclick="doAuth()">${reg?'Crear mi cuenta':'Entrar'}</button></div></div>`}
+async function enter(u){ME=u.id;const pf=await ok(sb.from('perfiles').select('nombre,rol').eq('id',ME).single());NAME=pf.nombre;ADM=pf.rol==='admin';ST='ok';await loadAll()}
+async function doAuth(){
+ $('er').textContent='';$('er').style.color='';
+ try{const email=val('ae'),password=$('ap').value,reg=MODE==='reg';
+  if(reg){const nombre=val('an');if(!nombre)throw new Error('Escribe tu nombre.');if(password.length<8)throw new Error('La contraseña debe tener al menos 8 caracteres.');if(password!==$('ap2').value)throw new Error('Las contraseñas no coinciden.');
+   const {data,error}=await sb.auth.signUp({email,password,options:{data:{nombre}}});if(error)throw new Error(tr(error));
+   if(!data.session){$('er').style.color='var(--ok)';$('er').textContent='Cuenta creada. Revisa tu correo para confirmarla y luego inicia sesión.';return}
+   await enter(data.user)}
+  else{const {data,error}=await sb.auth.signInWithPassword({email,password});if(error)throw new Error(tr(error));await enter(data.user)}}
+ catch(e){$('er').textContent=e.message}}
+async function logout(){await sb.auth.signOut();ST='auth';ME=null;ALL=false;C=[];R=[];P=[];D=[];draw()}
+/* Clientes */
+function vC(){return `<div class="card"><h2>Nuevo cliente</h2><div class="grid">
+<div><label>Nombre</label><input id="cn"></div><div><label>Teléfono</label><input id="ct"></div>
+<div><label>Correo</label><input id="ce"></div><div><label>Ciudad</label><input id="cc"></div>
+<button class="btn" onclick="addC()">Agregar</button></div></div>
+<div class="card"><h2>${ALL?'Clientes del equipo':'Mis clientes'} (${C.length})</h2><div class="tw">${C.length?`<table><tr><th>Nombre</th><th>Teléfono</th><th>Correo</th><th>Ciudad</th>${ALL?'<th>Responsable</th>':''}<th>Pedidos</th><th>Debe</th></tr>`+C.map(c=>{const ps=P.filter(p=>p.c===c.id),d=sum(ps,sal);return `<tr><td>${esc(c.nombre)}</td><td>${esc(c.tel)}</td><td>${esc(c.mail)}</td><td>${esc(c.ciudad)}</td>${ALL?`<td>${esc(c.uname)}</td>`:''}<td>${ps.length}</td><td class="${d>0?'neg':'pos'}">${M(d)}</td></tr>`}).join('')+'</table>':'<div class="empty">Aún no tienes clientes registrados.</div>'}</div></div>`}
+function addC(){const n=val('cn');if(!n)return;act(()=>ok(sb.from('clientes').insert({nombre:n,telefono:val('ct'),correo:val('ce'),ciudad:val('cc')})))}
+/* Referencias */
+function vR(){return `<div class="card"><h2>Nueva referencia</h2><div class="grid">
+<div><label>Código</label><input id="rc"></div><div><label>Nombre</label><input id="rn"></div>
+<div><label>Precio de venta</label><input id="rp" type="number" min="0"></div><div><label>Costo</label><input id="rk" type="number" min="0"></div>
+<button class="btn" onclick="addR()">Agregar</button></div></div>
+<div class="card"><h2>Referencias de la empresa (${R.length})</h2><div class="tw">${R.length?`<table><tr><th>Código</th><th>Nombre</th><th>Precio</th><th>Costo</th><th>Utilidad</th><th>Margen</th></tr>`+R.map(r=>{const u=r.precio-r.costo;return `<tr><td>${esc(r.cod)}</td><td>${esc(r.nombre)}</td><td>${M(r.precio)}</td><td>${M(r.costo)}</td><td class="${u>=0?'pos':'neg'}">${M(u)}</td><td>${r.precio?Math.round(u/r.precio*100):0}%</td></tr>`}).join('')+'</table>':'<div class="empty">Aún no hay referencias.</div>'}</div></div>`}
+function addR(){const n=val('rn');if(!n)return;act(()=>ok(sb.from('referencias').insert({codigo:val('rc'),nombre:n,precio:+val('rp')||0,costo:+val('rk')||0})))}
+/* Pedidos */
+function vP(){
+ const v=sum(P,tot),k=sum(P,cost),u=v-k,dt=sum(D,l=>l.precio*l.cant);
+ return `<div class="kp"><div><small>Ventas</small><b>${M(v)}</b></div><div><small>Costos</small><b>${M(k)}</b></div><div><small>Utilidad</small><b class="${u>=0?'pos':'neg'}">${M(u)}</b></div><div><small>Margen</small><b>${v?Math.round(u/v*100):0}%</b></div></div>
+<div class="card"><h2>Nuevo pedido</h2>${C.length&&R.length?`<div class="grid">
+<div><label>Fecha del pedido</label><input id="pf" type="date" value="${DF}"></div>
+<div><label>Cliente</label><select id="pc" onchange="deuda()">${C.map(c=>`<option value="${c.id}" ${c.id===DC?'selected':''}>${esc(c.nombre)}</option>`).join('')}</select><div id="deuda" style="margin-top:4px;font-size:13px"></div></div></div>
+<h2 style="margin-top:14px">Referencias del pedido</h2><div class="grid">
+<div><label>Referencia</label><select id="pr" onchange="fill()">${R.map(r=>`<option value="${r.id}">${esc(r.cod)} ${esc(r.nombre)}</option>`).join('')}</select></div>
+<div><label>Cantidad</label><input id="pq" type="number" min="1" value="1"></div>
+<div><label>Precio unitario</label><input id="pp" type="number" min="0" value="${R[0].precio}"></div>
+<div><label>Costo unitario</label><input id="pk" type="number" min="0" value="${R[0].costo}"></div>
+<button class="btn" onclick="addLine()">+ Agregar línea</button></div>
+${D.length?`<div class="tw"><table style="min-width:480px"><tr><th>Referencia</th><th>Cant.</th><th>Precio</th><th>Subtotal</th><th></th></tr>${D.map((l,i)=>`<tr><td>${rl(l)}</td><td>${l.cant}</td><td>${M(l.precio)}</td><td>${M(l.precio*l.cant)}</td><td><button class="x" onclick="D.splice(${i},1);keep();draw()">✕</button></td></tr>`).join('')}<tr><td colspan="3"><b>Total</b></td><td colspan="2"><b>${M(dt)}</b></td></tr></table></div>`:'<div class="empty">Agrega una o más referencias al pedido.</div>'}
+<div class="grid" style="margin-top:10px"><div><label>Abono inicial (opcional)</label><input id="pa" type="number" min="0" value="0"></div><button class="btn" onclick="addP()">Registrar pedido y factura</button></div>`:'<div class="empty">Primero registra al menos un cliente tuyo y que exista una referencia.</div>'}</div>
+<div class="card"><h2>Pedidos (${P.length})</h2><div class="tw">${P.length?`<table style="min-width:900px"><tr><th>Fecha</th><th>Cliente</th>${ALL?'<th>Responsable</th>':''}<th>Referencias</th><th>Total</th><th>Pagado</th><th>Saldo</th><th>Utilidad</th><th>Factura</th><th></th></tr>`+P.slice().sort((a,b)=>b.fecha.localeCompare(a.fecha)||b.num.localeCompare(a.num)).map(p=>`<tr><td>${p.fecha}</td><td>${esc(cn(p.c))}</td>${ALL?`<td>${esc(p.uname)}</td>`:''}<td style="white-space:normal;min-width:160px">${p.items.map(rl).join(', ')}</td><td>${M(tot(p))}</td><td>${M(pag(p))}</td><td class="${sal(p)>0?'neg':'pos'}">${M(sal(p))}</td><td class="${ut(p)>=0?'pos':'neg'}">${M(ut(p))}</td><td><button class="btn" style="padding:4px 10px" onclick="inv('${p.id}')">${p.num}</button></td><td><button class="x" onclick="del('pedidos','${p.id}')">✕</button></td></tr>`).join('')+'</table>':'<div class="empty">Aún no hay pedidos.</div>'}</div></div>`}
+function deuda(){const d=sum(P.filter(p=>p.c===val('pc')),sal);$('deuda').innerHTML=d>0?`Este cliente debe: <b class="neg">${M(d)}</b>`:'<span class="pos">Este cliente está al día</span>'}
+function keep(){if($('pf')){DF=val('pf');DC=val('pc')}}
+function fill(){const r=rf(val('pr'));$('pp').value=r.precio;$('pk').value=r.costo}
+function addLine(){keep();D.push({r:val('pr'),cant:+val('pq')||1,precio:+val('pp')||0,costo:+val('pk')||0});draw()}
+async function addP(){
+ if(!D.length){alert('Agrega al menos una referencia al pedido.');return}
+ const t=sum(D,l=>l.precio*l.cant),a=+val('pa')||0;
+ if(a>t){alert('El abono no puede ser mayor al total del pedido.');return}
+ try{const id=await ok(sb.rpc('crear_pedido',{p_fecha:val('pf')||today(),p_cliente:+val('pc'),p_items:D,p_abono:a}));
+  D=[];DC='';DF=today();await loadAll();inv(String(id))}catch(e){alert(e.message)}}
+/* Pagos */
+function vG(){
+ const deb=P.filter(p=>sal(p)>0),ac=C.filter(c=>P.some(p=>p.c===c.id));
+ return `<div class="kp"><div><small>Cobrado</small><b class="pos">${M(sum(P,pag))}</b></div><div><small>Por cobrar</small><b class="${sum(P,sal)>0?'neg':'pos'}">${M(sum(P,sal))}</b></div><div><small>Pedidos con saldo</small><b>${deb.length}</b></div></div>
+<div class="card"><h2>Registrar abono</h2>${deb.length?`<div class="grid">
+<div><label>Pedido</label><select id="ps" onchange="$('pm').value=sal(P.find(x=>x.id===val('ps')))">${deb.map(p=>`<option value="${p.id}">${p.num} · ${esc(cn(p.c))} · debe ${M(sal(p))}</option>`).join('')}</select></div>
+<div><label>Valor del abono</label><input id="pm" type="number" min="1" value="${sal(deb[0])}"></div>
+<div><label>Fecha</label><input id="pg" type="date" value="${today()}"></div>
+<div><label>Nota (opcional)</label><input id="pn"></div>
+<button class="btn" onclick="addPago()">Registrar abono</button></div>`:'<div class="empty">No hay pedidos con saldo pendiente.</div>'}</div>
+<div class="card"><h2>Deuda por cliente</h2><div class="tw">${ac.length?`<table style="min-width:520px"><tr><th>Cliente</th><th>Total pedidos</th><th>Abonado</th><th>Debe</th></tr>`+ac.map(c=>{const ps=P.filter(p=>p.c===c.id),d=sum(ps,sal);return `<tr><td>${esc(c.nombre)}</td><td>${M(sum(ps,tot))}</td><td>${M(sum(ps,pag))}</td><td class="${d>0?'neg':'pos'}"><b>${M(d)}</b></td></tr>`}).join('')+'</table>':'<div class="empty">Aún no hay pedidos.</div>'}</div></div>`}
+function addPago(){const p=P.find(x=>x.id===val('ps')),m=+val('pm');if(!p||!(m>0))return;if(m>sal(p)){alert('El abono supera el saldo del pedido ('+M(sal(p))+').');return}act(()=>ok(sb.rpc('registrar_abono',{p_pedido:+p.id,p_fecha:val('pg')||today(),p_monto:m,p_nota:val('pn')})))}
+function del(c,id){if(confirm('¿Eliminar este registro?'))act(()=>ok(sb.from(c).delete().eq('id',id)))}
+/* Factura */
+function inv(id){const p=P.find(x=>x.id===id);if(!p)return;const c=C.find(x=>x.id===p.c)||{};
+const old=$('ov');if(old)old.remove();const o=document.createElement('div');o.id='ov';
+o.innerHTML=`<div class="sheet"><div class="bar noprint"><button class="btn" onclick="window.print()">Imprimir / PDF</button><button class="btn" onclick="$('ov').remove()">Cerrar</button></div>
+<div class="ih"><div style="display:flex;align-items:center;gap:10px"><img src="logo.jpg" alt=""><div><h2 style="margin:0">JM Select</h2><small>Factura de venta</small></div></div><div style="text-align:right"><b>${p.num}</b><br><small>Fecha: ${p.fecha}</small><br><small>Atendió: ${esc(p.uname)}</small></div></div>
+<p><b>Cliente:</b> ${esc(c.nombre||'—')}<br>${esc(c.tel||'')} ${esc(c.mail||'')}<br>${esc(c.ciudad||'')}</p>
+<div class="tw"><table style="min-width:480px"><tr><th>Referencia</th><th>Cant.</th><th>Precio unit.</th><th>Subtotal</th></tr>${p.items.map(l=>`<tr><td>${rl(l)}</td><td>${l.cant}</td><td>${M(l.precio)}</td><td>${M(l.precio*l.cant)}</td></tr>`).join('')}</table></div>
+<div style="text-align:right;margin-top:12px"><h2>Total: ${M(tot(p))}</h2>Abonado: ${M(pag(p))}<br><b>Saldo pendiente: ${M(sal(p))}</b></div></div>`;
+document.body.appendChild(o)}
+/* Inicio */
+(async()=>{try{const {data}=await sb.auth.getSession();if(data.session)await enter(data.session.user);else{ST='auth';draw()}}catch(e){ST='auth';draw()}})();
+draw();
+</script>
+</body>
+</html>
