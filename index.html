@@ -51,12 +51,12 @@ const M=n=>new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',maximu
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const $=i=>document.getElementById(i),val=i=>$(i).value.trim(),today=()=>new Date().toISOString().slice(0,10);
 const sum=(a,f)=>a.reduce((s,x)=>s+f(x),0);
-let ME=null,ADM=false,NAME='',ALL=false,ST='load',MODE='login',tab='pedidos',D=[],DF=today(),DC='';
-let C=[],R=[],P=[];
+let ME=null,ADM=false,NAME='',ALL=false,ST='load',MODE='login',tab='pedidos',D=[],DF=today(),DC='',NP=false;
+let C=[],P=[];
 const tot=p=>sum(p.items,l=>l.precio*l.cant),cost=p=>sum(p.items,l=>l.costo*l.cant),ut=p=>tot(p)-cost(p),pag=p=>sum(p.pagos,x=>x.m),sal=p=>tot(p)-pag(p);
-const cn=i=>(C.find(x=>x.id===i)||{}).nombre||'—',rf=i=>R.find(x=>x.id===i)||{};
-const rl=l=>{const r=rf(l.r);return esc((r.cod?r.cod+' ':'')+(r.nombre||'—'))};
-const TABS={clientes:'Clientes',referencias:'Referencias',pedidos:'Pedidos',pagos:'Pagos'};
+const cn=i=>(C.find(x=>x.id===i)||{}).nombre||'—';
+const rl=l=>esc(l.nombre);
+const TABS={clientes:'Clientes',pedidos:'Pedidos',pagos:'Pagos'};
 if(!window.CFG||/TU-PROYECTO/.test(CFG.url)){document.body.innerHTML='<p style="padding:20px">Falta configurar <b>config.js</b> con tu URL y clave de Supabase (ver LEEME.md).</p>';throw new Error('config')}
 const sb=supabase.createClient(CFG.url,CFG.key);
 const MSG={'Invalid login credentials':'Correo o contraseña incorrectos.','User already registered':'Ese correo ya está registrado.','Email not confirmed':'Debes confirmar tu correo antes de entrar.'};
@@ -65,10 +65,9 @@ async function ok(p){const {data,error}=await p;if(error)throw new Error(tr(erro
 async function loadAll(){
  let cq=sb.from('clientes').select('*,perfiles(nombre)').order('nombre'),pq=sb.from('pedidos').select('*,perfiles(nombre),pedido_items(*),pagos(*)').order('id');
  if(!ALL){cq=cq.eq('usuario_id',ME);pq=pq.eq('usuario_id',ME)}
- const [c,r,p]=await Promise.all([ok(cq),ok(sb.from('referencias').select('*').order('nombre')),ok(pq)]);
+ const [c,p]=await Promise.all([ok(cq),ok(pq)]);
  C=c.map(x=>({id:String(x.id),nombre:x.nombre,tel:x.telefono,mail:x.correo,ciudad:x.ciudad,u:x.usuario_id,uname:x.perfiles?.nombre||'—'}));
- R=r.map(x=>({id:String(x.id),cod:x.codigo,nombre:x.nombre,precio:+x.precio,costo:+x.costo}));
- P=p.map(x=>({id:String(x.id),num:x.numero,fecha:x.fecha,c:String(x.cliente_id),u:x.usuario_id,uname:x.perfiles?.nombre||'—',items:x.pedido_items.map(i=>({r:String(i.referencia_id),cant:i.cantidad,precio:+i.precio,costo:+i.costo})),pagos:x.pagos.slice().sort((a,b)=>a.fecha.localeCompare(b.fecha)).map(g=>({f:g.fecha,m:+g.monto,n:g.nota||''}))}));
+ P=p.map(x=>({id:String(x.id),num:x.numero,fecha:x.fecha,c:String(x.cliente_id),u:x.usuario_id,uname:x.perfiles?.nombre||'—',items:x.pedido_items.map(i=>({nombre:i.producto||'Producto',cant:i.cantidad,precio:+i.precio,costo:+i.costo})),pagos:x.pagos.slice().sort((a,b)=>a.fecha.localeCompare(b.fecha)).map(g=>({f:g.fecha,m:+g.monto,n:g.nota||''}))}));
  draw()}
 async function act(f){try{await f();await loadAll()}catch(e){alert(e.message)}}
 function go(t){tab=t;draw()}
@@ -77,7 +76,7 @@ function draw(){
  $('hd').innerHTML=`<img src="logo.jpg" alt="JM Select"><div class="t"><b>JM Select</b>${ok?`<small>${esc(NAME)}${ADM?' · administrador':''}</small>`:''}</div>${ok&&ADM?`<label style="margin:0"><input type="checkbox" ${ALL?'checked':''} onchange="ALL=this.checked;loadAll()"> Ver todo el equipo</label>`:''}${ok?'<button class="btn l" onclick="logout()">Salir</button>':''}`;
  if(!ok){$('nav').innerHTML='';$('app').innerHTML=gate();return}
  $('nav').innerHTML=Object.entries(TABS).map(([k,n])=>`<button class="${k===tab?'on':''}" onclick="go('${k}')">${n}</button>`).join('');
- $('app').innerHTML=({clientes:vC,referencias:vR,pedidos:vP,pagos:vG})[tab]();
+ $('app').innerHTML=({clientes:vC,pedidos:vP,pagos:vG})[tab]();
  if($('pc'))deuda();
 }
 /* Registro e inicio de sesión */
@@ -101,7 +100,7 @@ async function doAuth(){
    await enter(data.user)}
   else{const {data,error}=await sb.auth.signInWithPassword({email,password});if(error)throw new Error(tr(error));await enter(data.user)}}
  catch(e){$('er').textContent=e.message}}
-async function logout(){await sb.auth.signOut();ST='auth';ME=null;ALL=false;C=[];R=[];P=[];D=[];draw()}
+async function logout(){await sb.auth.signOut();ST='auth';ME=null;ALL=false;C=[];P=[];D=[];NP=false;draw()}
 /* Clientes */
 function vC(){return `<div class="card"><h2>Nuevo cliente</h2><div class="grid">
 <div><label>Nombre</label><input id="cn"></div><div><label>Teléfono</label><input id="ct"></div>
@@ -109,39 +108,32 @@ function vC(){return `<div class="card"><h2>Nuevo cliente</h2><div class="grid">
 <button class="btn" onclick="addC()">Agregar</button></div></div>
 <div class="card"><h2>${ALL?'Clientes del equipo':'Mis clientes'} (${C.length})</h2><div class="tw">${C.length?`<table><tr><th>Nombre</th><th>Teléfono</th><th>Correo</th><th>Ciudad</th>${ALL?'<th>Responsable</th>':''}<th>Pedidos</th><th>Debe</th><th></th></tr>`+C.map(c=>{const ps=P.filter(p=>p.c===c.id),d=sum(ps,sal);return `<tr><td>${esc(c.nombre)}</td><td>${esc(c.tel)}</td><td>${esc(c.mail)}</td><td>${esc(c.ciudad)}</td>${ALL?`<td>${esc(c.uname)}</td>`:''}<td>${ps.length}</td><td class="${d>0?'neg':'pos'}">${M(d)}</td><td style="white-space:nowrap"><button class="x" style="color:var(--tx)" title="Editar" onclick="editC('${c.id}')">✎</button>${ADM?`<button class="x" title="Eliminar" onclick="del('clientes','${c.id}')">✕</button>`:''}</td></tr>`}).join('')+'</table>':'<div class="empty">Aún no tienes clientes registrados.</div>'}</div></div>`}
 function addC(){const n=val('cn');if(!n)return;act(()=>ok(sb.from('clientes').insert({nombre:n,telefono:val('ct'),correo:val('ce'),ciudad:val('cc')})))}
-/* Referencias */
-function vR(){return `<div class="card"><h2>Nueva referencia</h2><div class="grid">
-<div><label>Código</label><input id="rc"></div><div><label>Nombre</label><input id="rn"></div>
-<div><label>Precio de venta</label><input id="rp" type="number" min="0"></div><div><label>Costo</label><input id="rk" type="number" min="0"></div>
-<button class="btn" onclick="addR()">Agregar</button></div></div>
-<div class="card"><h2>Referencias de la empresa (${R.length})</h2><div class="tw">${R.length?`<table><tr><th>Código</th><th>Nombre</th><th>Precio</th><th>Costo</th><th>Utilidad</th><th>Margen</th>${ADM?'<th></th>':''}</tr>`+R.map(r=>{const u=r.precio-r.costo;return `<tr><td>${esc(r.cod)}</td><td>${esc(r.nombre)}</td><td>${M(r.precio)}</td><td>${M(r.costo)}</td><td class="${u>=0?'pos':'neg'}">${M(u)}</td><td>${r.precio?Math.round(u/r.precio*100):0}%</td>${ADM?`<td style="white-space:nowrap"><button class="x" style="color:var(--tx)" title="Editar" onclick="editR('${r.id}')">✎</button><button class="x" title="Eliminar" onclick="del('referencias','${r.id}')">✕</button></td>`:''}</tr>`}).join('')+'</table>':'<div class="empty">Aún no hay referencias.</div>'}</div></div>`}
-function addR(){const n=val('rn');if(!n)return;act(()=>ok(sb.from('referencias').insert({codigo:val('rc'),nombre:n,precio:+val('rp')||0,costo:+val('rk')||0})))}
 /* Pedidos */
 function vP(){
- const v=sum(P,tot),k=sum(P,cost),u=v-k,dt=sum(D,l=>l.precio*l.cant);
- return `<div class="kp"><div><small>Ventas</small><b>${M(v)}</b></div><div><small>Costos</small><b>${M(k)}</b></div><div><small>Utilidad</small><b class="${u>=0?'pos':'neg'}">${M(u)}</b></div><div><small>Margen</small><b>${v?Math.round(u/v*100):0}%</b></div></div>
-<div class="card"><h2>Nuevo pedido</h2>${C.length&&R.length?`<div class="grid">
+ const v=sum(P,tot),k=sum(P,cost),u=v-k,dt=sum(D,l=>l.precio*l.cant),du=sum(D,l=>(l.precio-l.costo)*l.cant);
+ const form=!C.length?'<div class="empty">Primero registra al menos un cliente tuyo.</div>':NP?`<div class="grid">
 <div><label>Fecha del pedido</label><input id="pf" type="date" value="${DF}"></div>
 <div><label>Cliente</label><select id="pc" onchange="deuda()">${C.map(c=>`<option value="${c.id}" ${c.id===DC?'selected':''}>${esc(c.nombre)}</option>`).join('')}</select><div id="deuda" style="margin-top:4px;font-size:13px"></div></div></div>
-<h2 style="margin-top:14px">Referencias del pedido</h2><div class="grid">
-<div><label>Referencia</label><select id="pr" onchange="fill()">${R.map(r=>`<option value="${r.id}">${esc(r.cod)} ${esc(r.nombre)}</option>`).join('')}</select></div>
+<h2 style="margin-top:14px">Productos del pedido</h2><div class="grid">
+<div><label>Producto</label><input id="pn2" placeholder="Ej: Zapatos Nike"></div>
 <div><label>Cantidad</label><input id="pq" type="number" min="1" value="1"></div>
-<div><label>Precio unitario</label><input id="pp" type="number" min="0" value="${R[0].precio}"></div>
-<div><label>Costo unitario</label><input id="pk" type="number" min="0" value="${R[0].costo}"></div>
-<button class="btn" onclick="addLine()">+ Agregar línea</button></div>
-${D.length?`<div class="tw"><table style="min-width:480px"><tr><th>Referencia</th><th>Cant.</th><th>Precio</th><th>Subtotal</th><th></th></tr>${D.map((l,i)=>`<tr><td>${rl(l)}</td><td>${l.cant}</td><td>${M(l.precio)}</td><td>${M(l.precio*l.cant)}</td><td><button class="x" onclick="D.splice(${i},1);keep();draw()">✕</button></td></tr>`).join('')}<tr><td colspan="3"><b>Total</b></td><td colspan="2"><b>${M(dt)}</b></td></tr></table></div>`:'<div class="empty">Agrega una o más referencias al pedido.</div>'}
-<div class="grid" style="margin-top:10px"><div><label>Abono inicial (opcional)</label><input id="pa" type="number" min="0" value="0"></div><button class="btn" onclick="addP()">Registrar pedido y factura</button></div>`:'<div class="empty">Primero registra al menos un cliente tuyo y que exista una referencia.</div>'}</div>
-<div class="card"><h2>Pedidos (${P.length})</h2><div class="tw">${P.length?`<table style="min-width:900px"><tr><th>Fecha</th><th>Cliente</th>${ALL?'<th>Responsable</th>':''}<th>Referencias</th><th>Total</th><th>Pagado</th><th>Saldo</th><th>Utilidad</th><th>Factura</th><th></th></tr>`+P.slice().sort((a,b)=>b.fecha.localeCompare(a.fecha)||b.num.localeCompare(a.num)).map(p=>`<tr><td>${p.fecha}</td><td>${esc(cn(p.c))}</td>${ALL?`<td>${esc(p.uname)}</td>`:''}<td style="white-space:normal;min-width:160px">${p.items.map(rl).join(', ')}</td><td>${M(tot(p))}</td><td>${M(pag(p))}</td><td class="${sal(p)>0?'neg':'pos'}">${M(sal(p))}</td><td class="${ut(p)>=0?'pos':'neg'}">${M(ut(p))}</td><td><button class="btn" style="padding:4px 10px" onclick="inv('${p.id}')">${p.num}</button></td><td><button class="x" onclick="del('pedidos','${p.id}')">✕</button></td></tr>`).join('')+'</table>':'<div class="empty">Aún no hay pedidos.</div>'}</div></div>`}
+<div><label>Costo (lo que te cuesta)</label><input id="pk" type="number" min="0" placeholder="250000"></div>
+<div><label>Precio de venta</label><input id="pp" type="number" min="0" placeholder="300000"></div>
+<button class="btn" onclick="addLine()">+ Agregar producto</button></div>
+${D.length?`<div class="tw"><table style="min-width:520px"><tr><th>Producto</th><th>Cant.</th><th>Costo</th><th>Precio</th><th>Utilidad</th><th></th></tr>${D.map((l,i)=>`<tr><td>${rl(l)}</td><td>${l.cant}</td><td>${M(l.costo)}</td><td>${M(l.precio)}</td><td class="${l.precio>=l.costo?'pos':'neg'}">${M((l.precio-l.costo)*l.cant)}</td><td><button class="x" onclick="D.splice(${i},1);keep();draw()">✕</button></td></tr>`).join('')}<tr><td colspan="3"><b>Total a cobrar</b></td><td><b>${M(dt)}</b></td><td class="${du>=0?'pos':'neg'}"><b>${M(du)}</b></td><td></td></tr></table></div>`:'<div class="empty">Agrega uno o más productos al pedido.</div>'}
+<div class="grid" style="margin-top:10px"><div><label>Abono inicial (opcional)</label><input id="pa" type="number" min="0" value="0"></div><button class="btn" onclick="addP()">Registrar pedido y factura</button><button class="btn l" onclick="NP=false;D=[];draw()">Cancelar</button></div>`:'<button class="btn" onclick="NP=true;draw()">+ Agregar nuevo pedido</button>';
+ return `<div class="kp"><div><small>Ventas</small><b>${M(v)}</b></div><div><small>Costos</small><b>${M(k)}</b></div><div><small>Utilidad</small><b class="${u>=0?'pos':'neg'}">${M(u)}</b></div><div><small>Margen</small><b>${v?Math.round(u/v*100):0}%</b></div></div>
+<div class="card"><h2>Nuevo pedido</h2>${form}</div>
+<div class="card"><h2>Pedidos (${P.length})</h2><div class="tw">${P.length?`<table style="min-width:900px"><tr><th>Fecha</th><th>Cliente</th>${ALL?'<th>Responsable</th>':''}<th>Productos</th><th>Total</th><th>Pagado</th><th>Saldo</th><th>Utilidad</th><th>Factura</th><th></th></tr>`+P.slice().sort((a,b)=>b.fecha.localeCompare(a.fecha)||b.num.localeCompare(a.num)).map(p=>`<tr><td>${p.fecha}</td><td>${esc(cn(p.c))}</td>${ALL?`<td>${esc(p.uname)}</td>`:''}<td style="white-space:normal;min-width:160px">${p.items.map(rl).join(', ')}</td><td>${M(tot(p))}</td><td>${M(pag(p))}</td><td class="${sal(p)>0?'neg':'pos'}">${M(sal(p))}</td><td class="${ut(p)>=0?'pos':'neg'}">${M(ut(p))}</td><td><button class="btn" style="padding:4px 10px" onclick="inv('${p.id}')">${p.num}</button></td><td><button class="x" onclick="del('pedidos','${p.id}')">✕</button></td></tr>`).join('')+'</table>':'<div class="empty">Aún no hay pedidos.</div>'}</div></div>`}
 function deuda(){const d=sum(P.filter(p=>p.c===val('pc')),sal);$('deuda').innerHTML=d>0?`Este cliente debe: <b class="neg">${M(d)}</b>`:'<span class="pos">Este cliente está al día</span>'}
 function keep(){if($('pf')){DF=val('pf');DC=val('pc')}}
-function fill(){const r=rf(val('pr'));$('pp').value=r.precio;$('pk').value=r.costo}
-function addLine(){keep();D.push({r:val('pr'),cant:+val('pq')||1,precio:+val('pp')||0,costo:+val('pk')||0});draw()}
+function addLine(){keep();const n=val('pn2');if(!n){alert('Escribe el nombre del producto.');return}D.push({nombre:n,cant:+val('pq')||1,precio:+val('pp')||0,costo:+val('pk')||0});draw()}
 async function addP(){
- if(!D.length){alert('Agrega al menos una referencia al pedido.');return}
+ if(!D.length){alert('Agrega al menos un producto al pedido.');return}
  const t=sum(D,l=>l.precio*l.cant),a=+val('pa')||0;
  if(a>t){alert('El abono no puede ser mayor al total del pedido.');return}
  try{const id=await ok(sb.rpc('crear_pedido',{p_fecha:val('pf')||today(),p_cliente:+val('pc'),p_items:D,p_abono:a}));
-  D=[];DC='';DF=today();await loadAll();inv(String(id))}catch(e){alert(e.message)}}
+  D=[];DC='';DF=today();NP=false;await loadAll();inv(String(id))}catch(e){alert(e.message)}}
 /* Pagos */
 function vG(){
  const deb=P.filter(p=>sal(p)>0),ac=C.filter(c=>P.some(p=>p.c===c.id));
@@ -155,7 +147,7 @@ function vG(){
 <div class="card"><h2>Deuda por cliente</h2><div class="tw">${ac.length?`<table style="min-width:520px"><tr><th>Cliente</th><th>Total pedidos</th><th>Abonado</th><th>Debe</th></tr>`+ac.map(c=>{const ps=P.filter(p=>p.c===c.id),d=sum(ps,sal);return `<tr><td>${esc(c.nombre)}</td><td>${M(sum(ps,tot))}</td><td>${M(sum(ps,pag))}</td><td class="${d>0?'neg':'pos'}"><b>${M(d)}</b></td></tr>`}).join('')+'</table>':'<div class="empty">Aún no hay pedidos.</div>'}</div></div>`}
 function addPago(){const p=P.find(x=>x.id===val('ps')),m=+val('pm');if(!p||!(m>0))return;if(m>sal(p)){alert('El abono supera el saldo del pedido ('+M(sal(p))+').');return}act(()=>ok(sb.rpc('registrar_abono',{p_pedido:+p.id,p_fecha:val('pg')||today(),p_monto:m,p_nota:val('pn')})))}
 function del(c,id){
- const m=c==='referencias'?'¿Eliminar esta referencia? Si ya se usó en pedidos, esas líneas quedarán sin nombre.':'¿Eliminar este registro?';
+ const m='¿Eliminar este registro?';
  if(confirm(m))act(async()=>{const r=await ok(sb.from(c).delete().eq('id',id).select());if(!r.length)throw new Error('No se pudo eliminar. Revisa que tengas permiso.')})}
 function edit(title,fields,save){
  const old=$('ov');if(old)old.remove();const o=document.createElement('div');o.id='ov';
@@ -168,18 +160,13 @@ function editC(id){const c=C.find(x=>x.id===id);if(!c)return;
   if(!v.nombre)throw new Error('Falta el nombre.');
   const r=await ok(sb.from('clientes').update({nombre:v.nombre,telefono:v.tel,correo:v.mail,ciudad:v.ciudad}).eq('id',id).select());
   if(!r.length)throw new Error('No se pudo guardar. Revisa que tengas permiso.')})}
-function editR(id){const r0=R.find(x=>x.id===id);if(!r0)return;
- edit('Editar referencia',[{k:'cod',l:'Código',v:r0.cod},{k:'nombre',l:'Nombre',v:r0.nombre},{k:'precio',l:'Precio de venta',v:r0.precio,t:'number'},{k:'costo',l:'Costo',v:r0.costo,t:'number'}],async v=>{
-  if(!v.nombre)throw new Error('Falta el nombre.');
-  const r=await ok(sb.from('referencias').update({codigo:v.cod,nombre:v.nombre,precio:v.precio,costo:v.costo}).eq('id',id).select());
-  if(!r.length)throw new Error('No se pudo guardar. Revisa que tengas permiso.')})}
 /* Factura */
 function inv(id){const p=P.find(x=>x.id===id);if(!p)return;const c=C.find(x=>x.id===p.c)||{};
 const old=$('ov');if(old)old.remove();const o=document.createElement('div');o.id='ov';
 o.innerHTML=`<div class="sheet"><div class="bar noprint"><button class="btn" onclick="window.print()">Imprimir / PDF</button><button class="btn" onclick="$('ov').remove()">Cerrar</button></div>
 <div class="ih"><div style="display:flex;align-items:center;gap:10px"><img src="logo.jpg" alt=""><div><h2 style="margin:0">JM Select</h2><small>Factura de venta</small></div></div><div style="text-align:right"><b>${p.num}</b><br><small>Fecha: ${p.fecha}</small><br><small>Atendió: ${esc(p.uname)}</small></div></div>
 <p><b>Cliente:</b> ${esc(c.nombre||'—')}<br>${esc(c.tel||'')} ${esc(c.mail||'')}<br>${esc(c.ciudad||'')}</p>
-<div class="tw"><table style="min-width:480px"><tr><th>Referencia</th><th>Cant.</th><th>Precio unit.</th><th>Subtotal</th></tr>${p.items.map(l=>`<tr><td>${rl(l)}</td><td>${l.cant}</td><td>${M(l.precio)}</td><td>${M(l.precio*l.cant)}</td></tr>`).join('')}</table></div>
+<div class="tw"><table style="min-width:480px"><tr><th>Producto</th><th>Cant.</th><th>Precio unit.</th><th>Subtotal</th></tr>${p.items.map(l=>`<tr><td>${rl(l)}</td><td>${l.cant}</td><td>${M(l.precio)}</td><td>${M(l.precio*l.cant)}</td></tr>`).join('')}</table></div>
 <div style="text-align:right;margin-top:12px"><h2>Total: ${M(tot(p))}</h2>Abonado: ${M(pag(p))}<br><b>Saldo pendiente: ${M(sal(p))}</b></div></div>`;
 document.body.appendChild(o)}
 /* Inicio */
