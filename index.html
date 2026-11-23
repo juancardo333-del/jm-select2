@@ -52,22 +52,28 @@ const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&g
 const $=i=>document.getElementById(i),val=i=>$(i).value.trim(),today=()=>new Date().toISOString().slice(0,10);
 const sum=(a,f)=>a.reduce((s,x)=>s+f(x),0);
 let ME=null,ADM=false,NAME='',ALL=false,ST='load',MODE='login',tab='pedidos',D=[],DF=today(),DC='',NP=false;
-let C=[],P=[];
+let C=[],P=[],PR=[];
 const tot=p=>sum(p.items,l=>l.precio*l.cant),cost=p=>sum(p.items,l=>l.costo*l.cant),ut=p=>tot(p)-cost(p),pag=p=>sum(p.pagos,x=>x.m),sal=p=>tot(p)-pag(p);
+const prDeuda=pr=>sum(pr.movs.filter(m=>m.tipo==='deuda'),m=>m.monto);
+const prAbono=pr=>sum(pr.movs.filter(m=>m.tipo==='abono'),m=>m.monto);
+const prSaldo=pr=>prDeuda(pr)-prAbono(pr);
 const cn=i=>(C.find(x=>x.id===i)||{}).nombre||'—';
 const rl=l=>esc(l.nombre);
-const TABS={clientes:'Clientes',pedidos:'Pedidos',pagos:'Pagos'};
+const TABS={clientes:'Clientes',pedidos:'Pedidos',pagos:'Pagos',proveedores:'Proveedores'};
 if(!window.CFG||/TU-PROYECTO/.test(CFG.url)){document.body.innerHTML='<p style="padding:20px">Falta configurar <b>config.js</b> con tu URL y clave de Supabase (ver LEEME.md).</p>';throw new Error('config')}
 const sb=supabase.createClient(CFG.url,CFG.key);
 const MSG={'Invalid login credentials':'Correo o contraseña incorrectos.','User already registered':'Ese correo ya está registrado.','Email not confirmed':'Debes confirmar tu correo antes de entrar.'};
-const tr=e=>e.code==='23503'?'No se puede eliminar: tiene pedidos asociados.':(MSG[e.message]||(/least|weak/i.test(e.message)?'La contraseña es muy débil (mínimo 8 caracteres).':e.message));
+const tr=e=>e.code==='23503'?'No se puede eliminar: tiene registros asociados.':(MSG[e.message]||(/least|weak/i.test(e.message)?'La contraseña es muy débil (mínimo 8 caracteres).':e.message));
 async function ok(p){const {data,error}=await p;if(error)throw new Error(tr(error));return data}
 async function loadAll(){
- let cq=sb.from('clientes').select('*,perfiles(nombre)').order('nombre'),pq=sb.from('pedidos').select('*,perfiles(nombre),pedido_items(*),pagos(*)').order('id');
- if(!ALL){cq=cq.eq('usuario_id',ME);pq=pq.eq('usuario_id',ME)}
- const [c,p]=await Promise.all([ok(cq),ok(pq)]);
+ let cq=sb.from('clientes').select('*,perfiles(nombre)').order('nombre'),
+     pq=sb.from('pedidos').select('*,perfiles(nombre),pedido_items(*),pagos(*)').order('id'),
+     prq=sb.from('proveedores').select('*,perfiles(nombre),proveedor_movimientos(*)').order('nombre');
+ if(!ALL){cq=cq.eq('usuario_id',ME);pq=pq.eq('usuario_id',ME);prq=prq.eq('usuario_id',ME)}
+ const [c,p,pr]=await Promise.all([ok(cq),ok(pq),ok(prq)]);
  C=c.map(x=>({id:String(x.id),nombre:x.nombre,tel:x.telefono,mail:x.correo,ciudad:x.ciudad,u:x.usuario_id,uname:x.perfiles?.nombre||'—'}));
  P=p.map(x=>({id:String(x.id),num:x.numero,fecha:x.fecha,c:String(x.cliente_id),u:x.usuario_id,uname:x.perfiles?.nombre||'—',items:x.pedido_items.map(i=>({nombre:i.producto||'Producto',cant:i.cantidad,precio:+i.precio,costo:+i.costo})),pagos:x.pagos.slice().sort((a,b)=>a.fecha.localeCompare(b.fecha)).map(g=>({f:g.fecha,m:+g.monto,n:g.nota||''}))}));
+ PR=pr.map(x=>({id:String(x.id),nombre:x.nombre,tel:x.telefono||'',mail:x.correo||'',ciudad:x.ciudad||'',u:x.usuario_id,uname:x.perfiles?.nombre||'—',movs:(x.proveedor_movimientos||[]).slice().sort((a,b)=>b.fecha.localeCompare(a.fecha)||b.id-a.id).map(m=>({id:String(m.id),tipo:m.tipo,fecha:m.fecha,monto:+m.monto,nota:m.nota||''}))}));
  draw()}
 async function act(f){try{await f();await loadAll()}catch(e){alert(e.message)}}
 function go(t){tab=t;draw()}
@@ -76,7 +82,7 @@ function draw(){
  $('hd').innerHTML=`<img src="logo.jpg" alt="JM Select"><div class="t"><b>JM Select</b>${ok?`<small>${esc(NAME)}${ADM?' · administrador':''}</small>`:''}</div>${ok&&ADM?`<label style="margin:0"><input type="checkbox" ${ALL?'checked':''} onchange="ALL=this.checked;loadAll()"> Ver todo el equipo</label>`:''}${ok?'<button class="btn l" onclick="logout()">Salir</button>':''}`;
  if(!ok){$('nav').innerHTML='';$('app').innerHTML=gate();return}
  $('nav').innerHTML=Object.entries(TABS).map(([k,n])=>`<button class="${k===tab?'on':''}" onclick="go('${k}')">${n}</button>`).join('');
- $('app').innerHTML=({clientes:vC,pedidos:vP,pagos:vG})[tab]();
+ $('app').innerHTML=({clientes:vC,pedidos:vP,pagos:vG,proveedores:vPR})[tab]();
  if($('pc'))deuda();
 }
 /* Registro e inicio de sesión */
@@ -100,7 +106,7 @@ async function doAuth(){
    await enter(data.user)}
   else{const {data,error}=await sb.auth.signInWithPassword({email,password});if(error)throw new Error(tr(error));await enter(data.user)}}
  catch(e){$('er').textContent=e.message}}
-async function logout(){await sb.auth.signOut();ST='auth';ME=null;ALL=false;C=[];P=[];D=[];NP=false;draw()}
+async function logout(){await sb.auth.signOut();ST='auth';ME=null;ALL=false;C=[];P=[];PR=[];D=[];NP=false;draw()}
 /* Clientes */
 function vC(){return `<div class="card"><h2>Nuevo cliente</h2><div class="grid">
 <div><label>Nombre</label><input id="cn"></div><div><label>Teléfono</label><input id="ct"></div>
@@ -146,6 +152,78 @@ function vG(){
 <button class="btn" onclick="addPago()">Registrar abono</button></div>`:'<div class="empty">No hay pedidos con saldo pendiente.</div>'}</div>
 <div class="card"><h2>Deuda por cliente</h2><div class="tw">${ac.length?`<table style="min-width:520px"><tr><th>Cliente</th><th>Total pedidos</th><th>Abonado</th><th>Debe</th></tr>`+ac.map(c=>{const ps=P.filter(p=>p.c===c.id),d=sum(ps,sal);return `<tr><td>${esc(c.nombre)}</td><td>${M(sum(ps,tot))}</td><td>${M(sum(ps,pag))}</td><td class="${d>0?'neg':'pos'}"><b>${M(d)}</b></td></tr>`}).join('')+'</table>':'<div class="empty">Aún no hay pedidos.</div>'}</div></div>`}
 function addPago(){const p=P.find(x=>x.id===val('ps')),m=+val('pm');if(!p||!(m>0))return;if(m>sal(p)){alert('El abono supera el saldo del pedido ('+M(sal(p))+').');return}act(()=>ok(sb.rpc('registrar_abono',{p_pedido:+p.id,p_fecha:val('pg')||today(),p_monto:m,p_nota:val('pn')})))}
+/* Proveedores */
+function vPR(){
+ const totD=sum(PR,prDeuda),totA=sum(PR,prAbono),totS=totD-totA;
+ return `<div class="kp">
+  <div><small>Total facturado / fiado</small><b>${M(totD)}</b></div>
+  <div><small>Total abonado</small><b class="pos">${M(totA)}</b></div>
+  <div><small>Saldo que debes</small><b class="${totS>0?'neg':'pos'}">${M(totS)}</b></div>
+ </div>
+ <div class="card"><h2>Registrar deuda o abono a proveedor</h2>${PR.length?`<div class="grid">
+  <div><label>Proveedor</label><select id="prs">${PR.map(pr=>`<option value="${pr.id}">${esc(pr.nombre)} · debes ${M(prSaldo(pr))}</option>`).join('')}</select></div>
+  <div><label>Movimiento</label><select id="prt"><option value="deuda">Agregar deuda (+)</option><option value="abono">Registrar abono (-)</option></select></div>
+  <div><label>Monto</label><input id="prm" type="number" min="1" placeholder="250000"></div>
+  <div><label>Fecha</label><input id="prf" type="date" value="${today()}"></div>
+  <div><label>Nota / Concepto</label><input id="prn" placeholder="Ej: Factura #104 o Transferencia"></div>
+  <button class="btn" onclick="addPrMov()">Guardar movimiento</button>
+ </div>`:'<div class="empty">Primero agrega un proveedor abajo para poder registrar deudas o abonos.</div>'}</div>
+ <div class="card"><h2>Nuevo proveedor</h2><div class="grid">
+  <div><label>Nombre</label><input id="pr_n"></div>
+  <div><label>Teléfono</label><input id="pr_t"></div>
+  <div><label>Correo</label><input id="pr_e"></div>
+  <div><label>Ciudad</label><input id="pr_c"></div>
+  <div><label>Deuda inicial (opcional)</label><input id="pr_d" type="number" min="0" value="0"></div>
+  <button class="btn" onclick="addPR()">Agregar proveedor</button>
+ </div></div>
+ <div class="card"><h2>${ALL?'Proveedores del equipo':'Mis proveedores'} (${PR.length})</h2><div class="tw">${PR.length?`<table style="min-width:860px"><tr><th>Proveedor</th><th>Teléfono</th><th>Ciudad</th>${ALL?'<th>Responsable</th>':''}<th>Total deuda</th><th>Abonado</th><th>Saldo pendiente</th><th>Historial</th><th></th></tr>`+PR.map(pr=>{const d=prDeuda(pr),a=prAbono(pr),s=prSaldo(pr);return `<tr><td>${esc(pr.nombre)}</td><td>${esc(pr.tel)}</td><td>${esc(pr.ciudad)}</td>${ALL?`<td>${esc(pr.uname)}</td>`:''}<td>${M(d)}</td><td class="pos">${M(a)}</td><td class="${s>0?'neg':'pos'}"><b>${M(s)}</b></td><td><button class="btn l" style="padding:4px 10px" onclick="histPR('${pr.id}')">Ver (${pr.movs.length})</button></td><td style="white-space:nowrap"><button class="x" style="color:var(--tx)" title="Editar" onclick="editPR('${pr.id}')">✎</button><button class="x" title="Eliminar" onclick="del('proveedores','${pr.id}')">✕</button></td></tr>`}).join('')+'</table>':'<div class="empty">Aún no tienes proveedores registrados.</div>'}</div></div>`;
+}
+async function addPR(){
+ const n=val('pr_n'),d=+val('pr_d')||0;
+ if(!n)return;
+ act(async()=>{
+  const ins=await ok(sb.from('proveedores').insert({nombre:n,telefono:val('pr_t'),correo:val('pr_e'),ciudad:val('pr_c')}).select().single());
+  if(d>0)await ok(sb.from('proveedor_movimientos').insert({proveedor_id:ins.id,tipo:'deuda',fecha:today(),monto:d,nota:'Saldo inicial'}));
+ });
+}
+function addPrMov(){
+ const pr=PR.find(x=>x.id===val('prs')),tipo=val('prt'),m=+val('prm');
+ if(!pr||!(m>0)){alert('Ingresa un monto válido.');return}
+ if(tipo==='abono'&&m>prSaldo(pr)){alert('El abono ('+M(m)+') supera la deuda actual con este proveedor ('+M(prSaldo(pr))+').');return}
+ act(()=>ok(sb.from('proveedor_movimientos').insert({proveedor_id:+pr.id,tipo,fecha:val('prf')||today(),monto:m,nota:val('prn')})));
+}
+function editPR(id){
+ const pr=PR.find(x=>x.id===id);if(!pr)return;
+ edit('Editar proveedor',[
+  {k:'nombre',l:'Nombre',v:pr.nombre},
+  {k:'tel',l:'Teléfono',v:pr.tel},
+  {k:'mail',l:'Correo',v:pr.mail},
+  {k:'ciudad',l:'Ciudad',v:pr.ciudad}
+ ],async v=>{
+  if(!v.nombre)throw new Error('Falta el nombre.');
+  const r=await ok(sb.from('proveedores').update({nombre:v.nombre,telefono:v.tel,correo:v.mail,ciudad:v.ciudad}).eq('id',id).select());
+  if(!r.length)throw new Error('No se pudo guardar. Revisa que tengas permiso.');
+ });
+}
+function histPR(id){
+ const pr=PR.find(x=>x.id===id);if(!pr)return;
+ const old=$('ov');if(old)old.remove();const o=document.createElement('div');o.id='ov';
+ o.innerHTML=`<div class="sheet"><div class="bar"><button class="btn" onclick="$('ov').remove()">Cerrar</button></div>
+  <h2 style="margin:0 0 4px">Historial · ${esc(pr.nombre)}</h2>
+  <small>Deuda total: ${M(prDeuda(pr))} · Abonado: ${M(prAbono(pr))} · <b>Saldo pendiente: ${M(prSaldo(pr))}</b></small>
+  <div class="tw" style="margin-top:12px">${pr.movs.length?`<table style="min-width:480px"><tr><th>Fecha</th><th>Tipo</th><th>Nota</th><th>Monto</th><th></th></tr>${pr.movs.map(m=>`<tr><td>${m.fecha}</td><td>${m.tipo==='deuda'?'Deuda (+)':'Abono (-)'}</td><td>${esc(m.nota||'—')}</td><td class="${m.tipo==='deuda'?'neg':'pos'}"><b>${M(m.monto)}</b></td><td><button class="x" title="Eliminar movimiento" onclick="delMov('${m.id}','${pr.id}')">✕</button></td></tr>`).join('')}</table>`:'<div class="empty">Sin movimientos registrados.</div>'}</div>
+ </div>`;
+ document.body.appendChild(o);
+}
+async function delMov(mid,pid){
+ if(!confirm('¿Eliminar este movimiento?'))return;
+ try{
+  const r=await ok(sb.from('proveedor_movimientos').delete().eq('id',mid).select());
+  if(!r.length)throw new Error('No se pudo eliminar.');
+  await loadAll();
+  histPR(pid);
+ }catch(e){alert(e.message)}
+}
 function del(c,id){
  const m='¿Eliminar este registro?';
  if(confirm(m))act(async()=>{const r=await ok(sb.from(c).delete().eq('id',id).select());if(!r.length)throw new Error('No se pudo eliminar. Revisa que tengas permiso.')})}
