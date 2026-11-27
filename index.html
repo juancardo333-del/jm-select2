@@ -52,14 +52,14 @@ const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&g
 const $=i=>document.getElementById(i),val=i=>$(i).value.trim(),today=()=>new Date().toISOString().slice(0,10);
 const sum=(a,f)=>a.reduce((s,x)=>s+f(x),0);
 let ME=null,ADM=false,NAME='',ALL=false,ST='load',MODE='login',tab='pedidos',D=[],DF=today(),DC='',NP=false;
-let C=[],P=[],PR=[];
+let C=[],P=[],PR=[],G=[];
 const tot=p=>sum(p.items,l=>l.precio*l.cant),cost=p=>sum(p.items,l=>l.costo*l.cant),ut=p=>tot(p)-cost(p),pag=p=>sum(p.pagos,x=>x.m),sal=p=>tot(p)-pag(p);
 const prDeuda=pr=>sum(pr.movs.filter(m=>m.tipo==='deuda'),m=>m.monto);
 const prAbono=pr=>sum(pr.movs.filter(m=>m.tipo==='abono'),m=>m.monto);
 const prSaldo=pr=>prDeuda(pr)-prAbono(pr);
 const cn=i=>(C.find(x=>x.id===i)||{}).nombre||'—';
 const rl=l=>esc(l.nombre);
-const TABS={clientes:'Clientes',pedidos:'Pedidos',pagos:'Pagos',proveedores:'Proveedores'};
+const TABS={clientes:'Clientes',pedidos:'Pedidos',pagos:'Pagos',proveedores:'Proveedores',gastos:'Gastos'};
 if(!window.CFG||/TU-PROYECTO/.test(CFG.url)){document.body.innerHTML='<p style="padding:20px">Falta configurar <b>config.js</b> con tu URL y clave de Supabase (ver LEEME.md).</p>';throw new Error('config')}
 const sb=supabase.createClient(CFG.url,CFG.key);
 const MSG={'Invalid login credentials':'Correo o contraseña incorrectos.','User already registered':'Ese correo ya está registrado.','Email not confirmed':'Debes confirmar tu correo antes de entrar.'};
@@ -68,12 +68,14 @@ async function ok(p){const {data,error}=await p;if(error)throw new Error(tr(erro
 async function loadAll(){
  let cq=sb.from('clientes').select('*,perfiles(nombre)').order('nombre'),
      pq=sb.from('pedidos').select('*,perfiles(nombre),pedido_items(*),pagos(*)').order('id'),
-     prq=sb.from('proveedores').select('*,perfiles(nombre),proveedor_movimientos(*)').order('nombre');
- if(!ALL){cq=cq.eq('usuario_id',ME);pq=pq.eq('usuario_id',ME);prq=prq.eq('usuario_id',ME)}
- const [c,p,pr]=await Promise.all([ok(cq),ok(pq),ok(prq)]);
+     prq=sb.from('proveedores').select('*,perfiles(nombre),proveedor_movimientos(*)').order('nombre'),
+     gq=sb.from('gastos').select('*,perfiles(nombre)').order('fecha',{ascending:false}).order('id',{ascending:false});
+ if(!ALL){cq=cq.eq('usuario_id',ME);pq=pq.eq('usuario_id',ME);prq=prq.eq('usuario_id',ME);gq=gq.eq('usuario_id',ME)}
+ const [c,p,pr,g]=await Promise.all([ok(cq),ok(pq),ok(prq),ok(gq)]);
  C=c.map(x=>({id:String(x.id),nombre:x.nombre,tel:x.telefono,mail:x.correo,ciudad:x.ciudad,u:x.usuario_id,uname:x.perfiles?.nombre||'—'}));
  P=p.map(x=>({id:String(x.id),num:x.numero,fecha:x.fecha,c:String(x.cliente_id),u:x.usuario_id,uname:x.perfiles?.nombre||'—',items:x.pedido_items.slice().sort((a,b)=>a.id-b.id).map(i=>({id:String(i.id),nombre:i.producto||'Producto',cant:i.cantidad,precio:+i.precio,costo:+i.costo})),pagos:x.pagos.slice().sort((a,b)=>a.fecha.localeCompare(b.fecha)).map(g=>({f:g.fecha,m:+g.monto,n:g.nota||''}))}));
  PR=pr.map(x=>({id:String(x.id),nombre:x.nombre,tel:x.telefono||'',mail:x.correo||'',ciudad:x.ciudad||'',u:x.usuario_id,uname:x.perfiles?.nombre||'—',movs:(x.proveedor_movimientos||[]).slice().sort((a,b)=>b.fecha.localeCompare(a.fecha)||b.id-a.id).map(m=>({id:String(m.id),tipo:m.tipo,fecha:m.fecha,monto:+m.monto,nota:m.nota||''}))}));
+ G=g.map(x=>({id:String(x.id),fecha:x.fecha,concepto:x.concepto,cat:x.categoria||'',monto:+x.monto,nota:x.nota||'',u:x.usuario_id,uname:x.perfiles?.nombre||'—'}));
  draw()}
 async function act(f){try{await f();await loadAll()}catch(e){alert(e.message)}}
 function go(t){tab=t;draw()}
@@ -82,7 +84,7 @@ function draw(){
  $('hd').innerHTML=`<img src="logo.jpg" alt="JM Select"><div class="t"><b>JM Select</b>${ok?`<small>${esc(NAME)}${ADM?' · administrador':''}</small>`:''}</div>${ok&&ADM?`<label style="margin:0"><input type="checkbox" ${ALL?'checked':''} onchange="ALL=this.checked;loadAll()"> Ver todo el equipo</label>`:''}${ok?'<button class="btn l" onclick="logout()">Salir</button>':''}`;
  if(!ok){$('nav').innerHTML='';$('app').innerHTML=gate();return}
  $('nav').innerHTML=Object.entries(TABS).map(([k,n])=>`<button class="${k===tab?'on':''}" onclick="go('${k}')">${n}</button>`).join('');
- $('app').innerHTML=({clientes:vC,pedidos:vP,pagos:vG,proveedores:vPR})[tab]();
+ $('app').innerHTML=({clientes:vC,pedidos:vP,pagos:vG,proveedores:vPR,gastos:vGS})[tab]();
  if($('pc'))deuda();
 }
 /* Registro e inicio de sesión */
@@ -106,7 +108,7 @@ async function doAuth(){
    await enter(data.user)}
   else{const {data,error}=await sb.auth.signInWithPassword({email,password});if(error)throw new Error(tr(error));await enter(data.user)}}
  catch(e){$('er').textContent=e.message}}
-async function logout(){await sb.auth.signOut();ST='auth';ME=null;ALL=false;C=[];P=[];PR=[];D=[];NP=false;draw()}
+async function logout(){await sb.auth.signOut();ST='auth';ME=null;ALL=false;C=[];P=[];PR=[];G=[];D=[];NP=false;draw()}
 /* Clientes */
 function vC(){return `<div class="card"><h2>Nuevo cliente</h2><div class="grid">
 <div><label>Nombre</label><input id="cn"></div><div><label>Teléfono</label><input id="ct"></div>
@@ -195,6 +197,31 @@ function vG(){
 <button class="btn" onclick="addPago()">Registrar abono</button></div>`:'<div class="empty">No hay pedidos con saldo pendiente.</div>'}</div>
 <div class="card"><h2>Deuda por cliente</h2><div class="tw">${ac.length?`<table style="min-width:520px"><tr><th>Cliente</th><th>Total pedidos</th><th>Abonado</th><th>Debe</th></tr>`+ac.map(c=>{const ps=P.filter(p=>p.c===c.id),d=sum(ps,sal);return `<tr><td>${esc(c.nombre)}</td><td>${M(sum(ps,tot))}</td><td>${M(sum(ps,pag))}</td><td class="${d>0?'neg':'pos'}"><b>${M(d)}</b></td></tr>`}).join('')+'</table>':'<div class="empty">Aún no hay pedidos.</div>'}</div></div>`}
 function addPago(){const p=P.find(x=>x.id===val('ps')),m=+val('pm');if(!p||!(m>0))return;if(m>sal(p)){alert('El abono supera el saldo del pedido ('+M(sal(p))+').');return}act(()=>ok(sb.rpc('registrar_abono',{p_pedido:+p.id,p_fecha:val('pg')||today(),p_monto:m,p_nota:val('pn')})))}
+/* Gastos */
+function vGS(){
+ const tt=sum(G,g=>g.monto),mes=today().slice(0,7),tm=sum(G.filter(g=>g.fecha.startsWith(mes)),g=>g.monto);
+ const cats=[...new Set(G.map(g=>g.cat).filter(Boolean))];
+ return `<div class="kp"><div><small>Total gastado</small><b class="neg">${M(tt)}</b></div><div><small>Este mes</small><b>${M(tm)}</b></div><div><small>Gastos registrados</small><b>${G.length}</b></div></div>
+<div class="card"><h2>Nuevo gasto</h2><div class="grid">
+<div><label>Fecha</label><input id="gf" type="date" value="${today()}"></div>
+<div><label>Concepto</label><input id="gc" placeholder="Ej: Transporte"></div>
+<div><label>Categoría (opcional)</label><input id="gk" list="gcats" placeholder="Ej: Envíos"><datalist id="gcats">${cats.map(c=>`<option value="${esc(c)}">`).join('')}</datalist></div>
+<div><label>Valor</label><input id="gm" type="number" min="1" placeholder="50000"></div>
+<div><label>Nota (opcional)</label><input id="gn"></div>
+<button class="btn" onclick="addGS()">Agregar gasto</button></div></div>
+<div class="card"><h2>${ALL?'Gastos del equipo':'Mis gastos'} (${G.length})</h2><div class="tw">${G.length?`<table style="min-width:640px"><tr><th>Fecha</th><th>Concepto</th><th>Categoría</th>${ALL?'<th>Responsable</th>':''}<th>Valor</th><th>Nota</th><th></th></tr>`+G.map(g=>`<tr><td>${g.fecha}</td><td>${esc(g.concepto)}</td><td>${esc(g.cat)}</td>${ALL?`<td>${esc(g.uname)}</td>`:''}<td class="neg"><b>${M(g.monto)}</b></td><td style="white-space:normal">${esc(g.nota)}</td><td style="white-space:nowrap"><button class="x" style="color:var(--tx)" title="Editar" onclick="editGS('${g.id}')">✎</button><button class="x" title="Eliminar" onclick="del('gastos','${g.id}')">✕</button></td></tr>`).join('')+`<tr><td colspan="${ALL?4:3}"><b>Total</b></td><td class="neg"><b>${M(tt)}</b></td><td colspan="2"></td></tr></table>`:'<div class="empty">Aún no has registrado gastos.</div>'}</div></div>`}
+function addGS(){
+ const c=val('gc'),m=+val('gm');
+ if(!c){alert('Escribe el concepto del gasto.');return}
+ if(!(m>0)){alert('Escribe un valor mayor a cero.');return}
+ act(()=>ok(sb.from('gastos').insert({fecha:val('gf')||today(),concepto:c,categoria:val('gk'),monto:m,nota:val('gn')})))}
+function editGS(id){
+ const g=G.find(x=>x.id===id);if(!g)return;
+ edit('Editar gasto',[{k:'fecha',l:'Fecha',v:g.fecha,t:'date'},{k:'concepto',l:'Concepto',v:g.concepto},{k:'cat',l:'Categoría',v:g.cat},{k:'monto',l:'Valor',v:g.monto,t:'number'},{k:'nota',l:'Nota',v:g.nota}],async v=>{
+  if(!v.concepto)throw new Error('Falta el concepto.');
+  if(!(v.monto>0))throw new Error('El valor debe ser mayor a cero.');
+  const r=await ok(sb.from('gastos').update({fecha:v.fecha||today(),concepto:v.concepto,categoria:v.cat,monto:v.monto,nota:v.nota}).eq('id',id).select());
+  if(!r.length)throw new Error('No se pudo guardar. Revisa que tengas permiso.')})}
 /* Proveedores */
 function vPR(){
  const totD=sum(PR,prDeuda),totA=sum(PR,prAbono),totS=totD-totA;
